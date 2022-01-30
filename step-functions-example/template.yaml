@@ -31,26 +31,26 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref CommentsDDBTable
 
-  CommentApi:
-    Type: AWS::Serverless::Api
-    Properties:
-      StageName: Prod
-      Auth:
-        AddDefaultAuthorizerToCorsPreflight: false
+  # CommentApi:
+  #   Type: AWS::Serverless::Api
+  #   Properties:
+  #     StageName: Prod
+  #     Auth:
+  #       AddDefaultAuthorizerToCorsPreflight: false
 
-  ConfirmCommentApiResource:
-    Type: AWS::ApiGateway::Resource
-    Properties:
-      ParentId: !GetAtt CommentApi.RootResourceId
-      PathPart: success
-      RestApiId: !Ref CommentApi
+  # ConfirmCommentApiResource:
+  #   Type: AWS::ApiGateway::Resource
+  #   Properties:
+  #     ParentId: !GetAtt CommentApi.RootResourceId
+  #     PathPart: success
+  #     RestApiId: !Ref CommentApi
 
-  RejectCommentApiResource:
-    Type: AWS::ApiGateway::Resource
-    Properties:
-      ParentId: !GetAtt CommentApi.RootResourceId
-      PathPart: failure
-      RestApiId: !Ref CommentApi
+  # RejectCommentApiResource:
+  #   Type: AWS::ApiGateway::Resource
+  #   Properties:
+  #     ParentId: !GetAtt CommentApi.RootResourceId
+  #     PathPart: failure
+  #     RestApiId: !Ref CommentApi
 
   ConfirmCommenterApiDeployment:
     Type: AWS::ApiGateway::Deployment
@@ -92,19 +92,6 @@ Resources:
       ContentType: 'application/json'
       RestApiId: !Ref CommentApi
       Schema: {}
-
-  # GatewayEmptyModel:
-  #   Type: AWS::ApiGateway::Model
-  #   Properties:
-  #     ContentType: 'application/json'
-  #     RestApiId: !Ref CommentApi
-  #     Schema:
-  #       $schema : 'http://json-schema.org/draft-04/schema#'
-  #       title : Response Schema
-  #       type : object
-  #       properties:
-  #         response:
-  #           type: string
 
   ApproveCommentApiMethod:
     Type: AWS::ApiGateway::Method

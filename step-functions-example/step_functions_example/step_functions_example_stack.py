@@ -1,5 +1,6 @@
 from aws_cdk import (
     Stack,
+    Duration,
     aws_lambda as lambda_,
     aws_stepfunctions as stepfunctions,
     aws_stepfunctions_tasks as tasks,
@@ -108,8 +109,74 @@ class StepFunctionsExampleStack(Stack):
             resource_type="Custom::JamesResource",
         )
 
-        # api = apigateway.RestApi(
-        #     self,
-        #     'cdk-sfn-demo',
-        #     description='CDK step function demo in CDK.'
+        start_state = tasks.LambdaInvoke(self, "Generate ULID",
+            lambda_function=generate_ulid_function_cdk,
+            # Lambda's result is in the attribute `Payload`
+            result_path="$.ulid",
+            timeout=Duration.seconds(5)
+        )
+
+        definition = start_state
+
+        state_machine = stepfunctions.StateMachine(self, "cdk-sfn-demo-state-machine",
+            definition=definition
+        )
+
+        api = apigateway.RestApi(
+            self,
+            'cdk-sfn-demo-comments-api',
+            description='CDK step function demo in CDK.'
+        )
+
+        # api_entry = apigateway.StepFunctionsRestApi(self, 
+        #     "cdk-sfn-demo-api-entry-point",
+        #     state_machine=state_machine
         # )
+
+        # entry_point = api_entry.root.add_resource("entry-point")
+        # entry_point.add_method("POST", apigateway.StepFunctionsIntegration.start_execution(state_machine))
+
+        credentials_role = iam.Role(
+            self, 'cdk-sfn-demo-trigger-state-machine-role',
+            assumed_by=iam.ServicePrincipal("apigateway.amazonaws.com"),
+        )
+
+        trigger_state_machine_policy = iam.Policy(
+            self, 'cdk-sfn-demo-trigger-state-machine-policy',
+            statements=[iam.PolicyStatement(
+                actions=['states:StartExecution'],
+                resources=[state_machine.state_machine_arn]
+            )]
+        )
+
+        credentials_role.attach_inline_policy(trigger_state_machine_policy)
+        entry_point = api.root.add_resource("entry-point")
+        entry_point.add_method(
+            'POST',
+            apigateway.AwsIntegration(
+                service='states',
+                action="StartExecution",
+                integration_http_method="POST",
+                options=apigateway.IntegrationOptions(
+                    credentials_role=credentials_role,
+                    request_templates={
+                        "application/json": f'{{"input": "{{\\"prefix\\":\\"prod\\"}}","stateMachineArn": "{state_machine.state_machine_arn}"}}'
+                    },
+                    integration_responses=[
+                        {"statusCode": "200", "responseTemplates": {"application/json": '{"attempted state machine start execution":"true"}'}}
+                    ]
+                )
+            ),
+            method_responses=[{ "statusCode": "200" }]
+        )
+
+        success = api.root.add_resource("success")
+        failure = api.root.add_resource("failure")
+        success.add_method('GET')
+        failure.add_method('GET')
+
+        cdk.CfnOutput(
+            self, "StepFunctionsApi",
+            description="CDK SFN Demo Entry Point API",
+            value = f'https://{api.rest_api_id}.execute-api.us-east-1.amazonaws.com/prod/entry-point/'
+        )

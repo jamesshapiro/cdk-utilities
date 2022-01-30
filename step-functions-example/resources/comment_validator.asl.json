@@ -4,8 +4,6 @@
   "States": {
     "Generate Ulid": {
       "Type": "Task",
-      "Resource": "${GenerateUlidFunctionArn}",
-      "TimeoutSeconds": 30,
       "Next": "Challenge Commenter Email",
       "ResultPath": "$.ulid"
     },
