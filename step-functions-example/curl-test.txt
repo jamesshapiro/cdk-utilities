@@ -1,0 +1,3 @@
+curl -X POST https://wgpgi6f1n5.execute-api.us-east-1.amazonaws.com/Prod/entry-point/ \
+   -H 'Content-Type: application/json' \
+   -d '{"commenter_email":"james.shapiro@gmail.com","post_id":"TEST_ID","comment_text":"shalom haverim 11!", "moderator_email":"james.shapiro@gmail.com", "comment_validator_email": "jamesshapirocomments+athens@gmail.com", "confirm_comment_endpoint":"https://d15fqf1scl.execute-api.us-east-1.amazonaws.com/production/commenter-confirmation/"}'
