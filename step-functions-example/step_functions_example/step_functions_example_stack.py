@@ -7,15 +7,19 @@ from aws_cdk import (
     aws_apigateway as apigateway,
     aws_iam as iam,
     aws_dynamodb as dynamodb,
-    custom_resources as custom_resources,
 )
 
 import aws_cdk as cdk
 from constructs import Construct
 
-integ_response = """
+integ_approve_response = """
 #set($inputRoot = $input.path('$'))
 {"response": "comment submitted for approval!"}
+"""
+
+integ_reject_response = """
+#set($inputRoot = $input.path('$'))
+{"response": "comment rejected!"}
 """
 
 class StepFunctionsExampleStack(Stack):
@@ -60,45 +64,12 @@ class StepFunctionsExampleStack(Stack):
             layers=[ulid_layer]
         )
 
-        
-
         ses_crud_policy = iam.Policy(
             self, 'cdk-sfn-demo-ses-policy',
             statements=[iam.PolicyStatement(
                 actions=['ses:GetIdentityVerificationAttributes','ses:SendEmail','ses:SendRawEmail','ses:VerifyEmailIdentity'],
                 resources=[f'arn:aws:ses:us-east-1:{account_id}:identity/{validator_email}']
             )]
-        )
-        
-
-        with open('resources/custom_resource.py') as f:
-            is_complete_code = f.read()
-
-        is_complete_handler=lambda_.Function(
-            self, 
-            id="ReminderCustomResourceCDK",
-            runtime=lambda_.Runtime.PYTHON_3_8,
-            code=lambda_.Code.from_inline(is_complete_code),
-            handler="index.lambda_handler",
-            # environment=dict(
-            #     API_KEY_ID=api_key.key_id,
-            # ),
-            timeout=cdk.Duration.seconds(30),
-            memory_size=128
-        )
-
-        my_provider = custom_resources.Provider(
-            self, "MyProvider",
-            on_event_handler=is_complete_handler,
-            is_complete_handler=is_complete_handler
-        )
-
-        custom_resource = cdk.CustomResource(
-            scope=self,
-            id='MyCustomResource',
-            service_token=my_provider.service_token,
-            removal_policy=cdk.RemovalPolicy.DESTROY,
-            resource_type="Custom::JamesResource",
         )
 
         generate_ulid_state = tasks.LambdaInvoke(self, "Generate ULID",
@@ -135,15 +106,57 @@ class StepFunctionsExampleStack(Stack):
         challenge_commenter_email_state = tasks.LambdaInvoke(self, "Challenge Commenter Email",
             lambda_function=challenge_email_function_cdk,
             integration_pattern=stepfunctions.IntegrationPattern.WAIT_FOR_TASK_TOKEN,
-            timeout=Duration.hours(1),
             payload=stepfunctions.TaskInput.from_object({
                 "token": stepfunctions.JsonPath.task_token,
                 "input": stepfunctions.JsonPath.string_at("$"),
                 "is_moderator": "false"
-            })
+            }),
+            result_path="$.taskresult",
+            timeout=Duration.hours(1)
         )
 
-        definition = generate_ulid_state.next(challenge_commenter_email_state)
+        log_comment_state = tasks.DynamoPutItem(self, "Log Comment",
+            item={
+                "PK1": tasks.DynamoAttributeValue.from_string(stepfunctions.JsonPath.string_at("$.post_id")),
+                "SK1": tasks.DynamoAttributeValue.from_string(stepfunctions.JsonPath.string_at("$.ulid.Payload.ulid")),
+                "COMMENT_TEXT": tasks.DynamoAttributeValue.from_string(stepfunctions.JsonPath.string_at("$.comment_text")),
+                "COMMENTER_EMAIL": tasks.DynamoAttributeValue.from_string(stepfunctions.JsonPath.string_at("$.commenter_email")),
+                "COMMENTER_APPROVED": tasks.DynamoAttributeValue.from_string("true"),
+                "MODERATOR_APPROVED": tasks.DynamoAttributeValue.from_string("false"),
+            },
+            table=ddb_table,
+            result_path="$.ddb_result"
+        )
+
+        challenge_moderator_email_state = tasks.LambdaInvoke(self, "Challenge Moderator Email",
+            lambda_function=challenge_email_function_cdk,
+            integration_pattern=stepfunctions.IntegrationPattern.WAIT_FOR_TASK_TOKEN,
+            payload=stepfunctions.TaskInput.from_object({
+                "token": stepfunctions.JsonPath.task_token,
+                "input": stepfunctions.JsonPath.string_at("$"),
+                "is_moderator": "true"
+            }),
+            result_path="$.moderatordecision",
+            timeout=Duration.days(7)
+        )
+
+        publish_comment_state = tasks.DynamoUpdateItem(self, "Publish Comment",
+            key={
+                "PK1": tasks.DynamoAttributeValue.from_string(stepfunctions.JsonPath.string_at("$.post_id")),
+                "SK1": tasks.DynamoAttributeValue.from_string(stepfunctions.JsonPath.string_at("$.ulid.Payload.ulid")),
+            },
+            table=ddb_table,
+            expression_attribute_values={
+                ":true_literal": tasks.DynamoAttributeValue.from_string("true")
+            },
+            expression_attribute_names={
+                "#moderator_approved": "MODERATOR_APPROVED"
+            },
+            update_expression="SET #moderator_approved = :true_literal",
+            result_path=None
+        )
+
+        definition = generate_ulid_state.next(challenge_commenter_email_state).next(log_comment_state).next(challenge_moderator_email_state).next(publish_comment_state)
 
         state_machine = stepfunctions.StateMachine(self, "cdk-sfn-demo-state-machine",
             definition=definition
@@ -155,7 +168,7 @@ class StepFunctionsExampleStack(Stack):
         )
 
         review_comment_role = iam.Role(
-            self, 'cdk-sfn-demo-send-task-success-state-machine-role',
+            self, 'cdk-sfn-demo-review-comment-state-machine-role',
             assumed_by=iam.ServicePrincipal("apigateway.amazonaws.com"),
         )
 
@@ -206,7 +219,6 @@ class StepFunctionsExampleStack(Stack):
         success = api.root.add_resource("success")
         failure = api.root.add_resource("failure")
         success.add_method('GET',
-            #
             request_parameters={"method.request.querystring.token": True},
             integration=apigateway.AwsIntegration(
                 service='states',
@@ -219,14 +231,30 @@ class StepFunctionsExampleStack(Stack):
                         "application/json": '{"output": "{\\"decision\\": \\"approve\\"}", "taskToken": "$input.params(\'token\')"}'
                     },
                     integration_responses=[
-                        apigateway.IntegrationResponse(status_code="200", response_templates={"application/json": integ_response})
+                        apigateway.IntegrationResponse(status_code="200", response_templates={"application/json": integ_approve_response})
                     ],
                 )
             ),
             method_responses=[apigateway.MethodResponse(status_code="200",response_models={"application/json": empty_model})]
         )
         failure.add_method('GET',
-            
+            request_parameters={"method.request.querystring.token": True},
+            integration=apigateway.AwsIntegration(
+                service='states',
+                integration_http_method="POST",
+                action="SendTaskFailure",
+                options=apigateway.IntegrationOptions(
+                    credentials_role=review_comment_role,
+                    passthrough_behavior=apigateway.PassthroughBehavior.WHEN_NO_TEMPLATES,
+                    request_templates={
+                        "application/json": '{"error": "rejected", "cause": "comment was rejected by commenter or moderator", "taskToken": "$input.params(\'token\')"}'
+                    },
+                    integration_responses=[
+                        apigateway.IntegrationResponse(status_code="200", response_templates={"application/json": integ_reject_response})
+                    ],
+                )
+            ),
+            method_responses=[apigateway.MethodResponse(status_code="200",response_models={"application/json": empty_model})]
         )
 
         cdk.CfnOutput(
@@ -235,8 +263,3 @@ class StepFunctionsExampleStack(Stack):
             value = f'https://{api.rest_api_id}.execute-api.us-east-1.amazonaws.com/prod/entry-point/'
         )
 
-        # cdk.CfnOutput(
-        #     self, "SendTaskSuccessEndpoint",
-        #     description="CDK SFN Demo Entry Point API",
-        #     value = f'https://{api.rest_api_id}.execute-api.us-east-1.amazonaws.com/prod/success/'
-        # )

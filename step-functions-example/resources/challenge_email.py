@@ -53,9 +53,9 @@ def send_email(ses_client, comment_validator_email, recipient_email, comment_tex
 def lambda_handler(event, context):
     commenter_email = None
     print(f'{event=}')
-    if event['is_moderator'] == 'true':
-        commenter_email = event['commenter_email']
     my_input = event['input']
+    if event['is_moderator'] == 'true':
+        commenter_email = my_input['commenter_email']
     recipient_email = my_input['recipient_email']
     comment_validator_email = my_input['comment_validator_email']
     comment_text = my_input['comment_text']
