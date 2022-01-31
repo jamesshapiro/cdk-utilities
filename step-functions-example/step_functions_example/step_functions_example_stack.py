@@ -13,6 +13,11 @@ from aws_cdk import (
 import aws_cdk as cdk
 from constructs import Construct
 
+integ_response = """
+#set($inputRoot = $input.path('$'))
+{"response": "comment submitted for approval!"}
+"""
+
 class StepFunctionsExampleStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
@@ -44,19 +49,6 @@ class StepFunctionsExampleStack(Stack):
             code=lambda_.Code.from_asset('layers/my-Python38-ulid.zip'),
             compatible_architectures=[lambda_.Architecture.X86_64]
         )
-        challenge_email_function_cdk = lambda_.Function(
-            self, 'cdk-sfn-demo-challenge-email',
-            runtime=lambda_.Runtime.PYTHON_3_8,
-            code=lambda_.Code.from_asset('resources'),
-            handler='challenge_email.lambda_handler',
-            environment=dict(
-                APPROVE_COMMENT_ENDPOINT='APPROVE_COMMENT_ENDPOINT',
-                REJECT_COMMENT_ENDPOINT='REJECT_COMMENT_ENDPOINT',
-                UNSUBSCRIBE_ENDPOINT='REJECT_COMMENT_ENDPOINT',
-            ),
-            timeout=cdk.Duration.seconds(30),
-            memory_size=128
-        )
 
         generate_ulid_function_cdk = lambda_.Function(
             self, 'cdk-sfn-demo-generate-ulid',
@@ -68,7 +60,7 @@ class StepFunctionsExampleStack(Stack):
             layers=[ulid_layer]
         )
 
-        ddb_table.grant_write_data(challenge_email_function_cdk)
+        
 
         ses_crud_policy = iam.Policy(
             self, 'cdk-sfn-demo-ses-policy',
@@ -77,7 +69,7 @@ class StepFunctionsExampleStack(Stack):
                 resources=[f'arn:aws:ses:us-east-1:{account_id}:identity/{validator_email}']
             )]
         )
-        challenge_email_function_cdk.role.attach_inline_policy(ses_crud_policy)
+        
 
         with open('resources/custom_resource.py') as f:
             is_complete_code = f.read()
@@ -109,18 +101,13 @@ class StepFunctionsExampleStack(Stack):
             resource_type="Custom::JamesResource",
         )
 
-        start_state = tasks.LambdaInvoke(self, "Generate ULID",
+        generate_ulid_state = tasks.LambdaInvoke(self, "Generate ULID",
             lambda_function=generate_ulid_function_cdk,
             # Lambda's result is in the attribute `Payload`
             result_path="$.ulid",
             timeout=Duration.seconds(5)
         )
-
-        definition = start_state
-
-        state_machine = stepfunctions.StateMachine(self, "cdk-sfn-demo-state-machine",
-            definition=definition
-        )
+        
 
         api = apigateway.RestApi(
             self,
@@ -128,16 +115,47 @@ class StepFunctionsExampleStack(Stack):
             description='CDK step function demo in CDK.'
         )
 
-        # api_entry = apigateway.StepFunctionsRestApi(self, 
-        #     "cdk-sfn-demo-api-entry-point",
-        #     state_machine=state_machine
-        # )
+        challenge_email_function_cdk = lambda_.Function(
+            self, 'cdk-sfn-demo-challenge-email',
+            runtime=lambda_.Runtime.PYTHON_3_8,
+            code=lambda_.Code.from_asset('resources'),
+            handler='challenge_email.lambda_handler',
+            environment=dict(
+                APPROVE_COMMENT_ENDPOINT=f'https://{api.rest_api_id}.execute-api.us-east-1.amazonaws.com/prod/success/',
+                REJECT_COMMENT_ENDPOINT=f'https://{api.rest_api_id}.execute-api.us-east-1.amazonaws.com/prod/failure/',
+                UNSUBSCRIBE_ENDPOINT='REJECT_COMMENT_ENDPOINT',
+            ),
+            timeout=cdk.Duration.seconds(30),
+            memory_size=128
+        )
 
-        # entry_point = api_entry.root.add_resource("entry-point")
-        # entry_point.add_method("POST", apigateway.StepFunctionsIntegration.start_execution(state_machine))
+        ddb_table.grant_write_data(challenge_email_function_cdk)
+        challenge_email_function_cdk.role.attach_inline_policy(ses_crud_policy)
+
+        challenge_commenter_email_state = tasks.LambdaInvoke(self, "Challenge Commenter Email",
+            lambda_function=challenge_email_function_cdk,
+            integration_pattern=stepfunctions.IntegrationPattern.WAIT_FOR_TASK_TOKEN,
+            timeout=Duration.hours(1),
+            payload=stepfunctions.TaskInput.from_object({
+                "token": stepfunctions.JsonPath.task_token,
+                "input": stepfunctions.JsonPath.string_at("$"),
+                "is_moderator": "false"
+            })
+        )
+
+        definition = generate_ulid_state.next(challenge_commenter_email_state)
+
+        state_machine = stepfunctions.StateMachine(self, "cdk-sfn-demo-state-machine",
+            definition=definition
+        )
 
         credentials_role = iam.Role(
             self, 'cdk-sfn-demo-trigger-state-machine-role',
+            assumed_by=iam.ServicePrincipal("apigateway.amazonaws.com"),
+        )
+
+        review_comment_role = iam.Role(
+            self, 'cdk-sfn-demo-send-task-success-state-machine-role',
             assumed_by=iam.ServicePrincipal("apigateway.amazonaws.com"),
         )
 
@@ -149,34 +167,76 @@ class StepFunctionsExampleStack(Stack):
             )]
         )
 
+        review_comment_policy = iam.Policy(
+            self, 'cdk-sfn-demo-review-comment-policy',
+            statements=[iam.PolicyStatement(
+                actions=['states:SendTaskSuccess','states:SendTaskFailure'],
+                resources=[state_machine.state_machine_arn]
+            )]
+        )
+
         credentials_role.attach_inline_policy(trigger_state_machine_policy)
+        review_comment_role.attach_inline_policy(review_comment_policy)
+
         entry_point = api.root.add_resource("entry-point")
         entry_point.add_method(
             'POST',
-            apigateway.AwsIntegration(
+            integration=apigateway.AwsIntegration(
                 service='states',
                 action="StartExecution",
                 integration_http_method="POST",
                 options=apigateway.IntegrationOptions(
                     credentials_role=credentials_role,
                     request_templates={
-                        "application/json": f'{{"input": "{{\\"prefix\\":\\"prod\\"}}","stateMachineArn": "{state_machine.state_machine_arn}"}}'
+                        "application/json": f'{{"input": "$util.escapeJavaScript($input.body)", "stateMachineArn": "{state_machine.state_machine_arn}"}}'
                     },
                     integration_responses=[
-                        {"statusCode": "200", "responseTemplates": {"application/json": '{"attempted state machine start execution":"true"}'}}
-                    ]
+                        apigateway.IntegrationResponse(status_code="200")
+                    ],
                 )
             ),
-            method_responses=[{ "statusCode": "200" }]
+            method_responses=[apigateway.MethodResponse(status_code="200")]
+        )
+
+        empty_model = api.add_model("GatewayEmptyModel",
+            content_type="application/json",
+            schema={}
         )
 
         success = api.root.add_resource("success")
         failure = api.root.add_resource("failure")
-        success.add_method('GET')
-        failure.add_method('GET')
+        success.add_method('GET',
+            #
+            request_parameters={"method.request.querystring.token": True},
+            integration=apigateway.AwsIntegration(
+                service='states',
+                integration_http_method="POST",
+                action="SendTaskSuccess",
+                options=apigateway.IntegrationOptions(
+                    credentials_role=review_comment_role,
+                    passthrough_behavior=apigateway.PassthroughBehavior.WHEN_NO_TEMPLATES,
+                    request_templates={
+                        "application/json": '{"output": "{\\"decision\\": \\"approve\\"}", "taskToken": "$input.params(\'token\')"}'
+                    },
+                    integration_responses=[
+                        apigateway.IntegrationResponse(status_code="200", response_templates={"application/json": integ_response})
+                    ],
+                )
+            ),
+            method_responses=[apigateway.MethodResponse(status_code="200",response_models={"application/json": empty_model})]
+        )
+        failure.add_method('GET',
+            
+        )
 
         cdk.CfnOutput(
             self, "StepFunctionsApi",
             description="CDK SFN Demo Entry Point API",
             value = f'https://{api.rest_api_id}.execute-api.us-east-1.amazonaws.com/prod/entry-point/'
         )
+
+        # cdk.CfnOutput(
+        #     self, "SendTaskSuccessEndpoint",
+        #     description="CDK SFN Demo Entry Point API",
+        #     value = f'https://{api.rest_api_id}.execute-api.us-east-1.amazonaws.com/prod/success/'
+        # )

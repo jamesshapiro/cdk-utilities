@@ -52,13 +52,15 @@ def send_email(ses_client, comment_validator_email, recipient_email, comment_tex
 
 def lambda_handler(event, context):
     commenter_email = None
+    print(f'{event=}')
     if event['is_moderator'] == 'true':
         commenter_email = event['commenter_email']
-    recipient_email = event['recipient_email']
-    comment_validator_email = event['comment_validator_email']
-    comment_text = event['comment_text']
+    my_input = event['input']
+    recipient_email = my_input['recipient_email']
+    comment_validator_email = my_input['comment_validator_email']
+    comment_text = my_input['comment_text']
     token = event['token']
-    my_ulid = event['ulid']
+    my_ulid = my_input['ulid']['Payload']['ulid']
     response = send_email(ses_client, comment_validator_email, recipient_email, comment_text, token, my_ulid, commenter_email)
     print(response)
     return

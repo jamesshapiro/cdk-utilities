@@ -2,15 +2,7 @@
   "Comment": "A state machine that requires email confirmation from the commenter and site owner before a comment is published.",
   "StartAt": "Generate Ulid",
   "States": {
-    "Generate Ulid": {
-      "Type": "Task",
-      "Next": "Challenge Commenter Email",
-      "ResultPath": "$.ulid"
-    },
     "Challenge Commenter Email": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
-      "TimeoutSeconds": 3600,
       "Parameters": {
         "FunctionName": "${ChallengeEmailFunctionArn}",
         "Payload": {
