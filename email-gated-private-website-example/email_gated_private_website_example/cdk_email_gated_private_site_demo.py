@@ -104,7 +104,7 @@ yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
                 cloudfront.ErrorResponse(
                     http_status=403,
                     response_http_status=200,
-                    response_page_path="/index.html",
+                    response_page_path="/login.html",
                     ttl=Duration.minutes(30)
                 )
             ],
