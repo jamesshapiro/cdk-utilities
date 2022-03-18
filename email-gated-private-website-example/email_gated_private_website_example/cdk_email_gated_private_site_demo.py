@@ -7,30 +7,36 @@ from aws_cdk import (
     aws_cloudfront_origins as origins,
     aws_route53 as route53,
     aws_route53_targets as route53_targets,
+    aws_ssm as ssm,
 )
 from constructs import Construct
 
 class CDKEmailGatedPrivateSiteDemoStack(Stack):
-
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        APP_NAME = 'athens-email-gated-demo'
+        PRIVATE_KEY_PARAM_NAME = f'{APP_NAME}-private-key'
+        PUBLIC_KEY_PARAM_NAME = f'{APP_NAME}-public-key'
 
-        with open(".cdk-params") as f:
+        with open('.cdk-params') as f:
             lines = f.read().splitlines()
             # .cdk-params should be of the form: key_name=value
             subdomain = [line for line in lines if line.startswith('subdomain=')][0].split('=')[1]
             hosted_zone_id = [line for line in lines if line.startswith('hosted_zone_id=')][0].split('=')[1]
             zone_name = [line for line in lines if line.startswith('zone_name=')][0].split('=')[1]
+        
+        with open('private_key.pem') as f:
+            private_key = f.read()
 
-        app_name = 'athens-email-gated-demo'
+        
 
         site_bucket = s3.Bucket(
-            self, f'{app_name}-bucket',
+            self, f'{APP_NAME}-bucket',
         )
 
         domain_names = [subdomain]
 
-        zone = route53.HostedZone.from_hosted_zone_attributes(self, "HostedZone",
+        zone = route53.HostedZone.from_hosted_zone_attributes(self, 'HostedZone',
             hosted_zone_id=hosted_zone_id,
             zone_name=zone_name
         )
@@ -51,16 +57,26 @@ yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
 3QIDAQAB
 -----END PUBLIC KEY-----
 """
-        pub_key = cloudfront.PublicKey(self, f"{app_name}MyPubKey",
+        ssm.StringParameter(self, f'{APP_NAME}-public-key',
+            description=f'{APP_NAME} Public Key',
+            parameter_name=PRIVATE_KEY_PARAM_NAME,
+            string_value=public_key
+        )
+        ssm.StringParameter(self, f'{APP_NAME}-private-key',
+            description=f'{APP_NAME} Private Key',
+            parameter_name=PUBLIC_KEY_PARAM_NAME,
+            string_value=private_key
+        )
+        pub_key = cloudfront.PublicKey(self, f'{APP_NAME}MyPubKey',
             encoded_key=public_key
         )
 
-        key_group = cloudfront.KeyGroup(self, f"{app_name}MyKeyGroup",
+        key_group = cloudfront.KeyGroup(self, f'{APP_NAME}MyKeyGroup',
             items=[pub_key]
         )
 
         distribution = cloudfront.Distribution(
-            self, f'{app_name}-distribution',
+            self, f'{APP_NAME}-distribution',
             default_behavior=cloudfront.BehaviorOptions(
                 origin=origins.S3Origin(site_bucket),
                 allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
@@ -75,25 +91,25 @@ yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
             ),
             additional_behaviors={
                 # public behavior 1
-                "/login.html": cloudfront.BehaviorOptions(
+                '/login.html': cloudfront.BehaviorOptions(
                     origin=origins.S3Origin(site_bucket),
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS
                 ),
                 # public behavior 2
-                "/assets/*": cloudfront.BehaviorOptions(
+                '/assets/*': cloudfront.BehaviorOptions(
                     origin=origins.S3Origin(site_bucket),
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS
                 ),
                 # public behavior 3 -- tied to Lambda@Edge function eventually
-                "/login": cloudfront.BehaviorOptions(
+                '/login': cloudfront.BehaviorOptions(
                     origin=origins.S3Origin(site_bucket),
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS
                 ),
                 # private behavior 1 -- tied to Lambda@Edge function eventually
-                "/auth": cloudfront.BehaviorOptions(
+                '/auth': cloudfront.BehaviorOptions(
                     origin=origins.S3Origin(site_bucket),
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -104,11 +120,11 @@ yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
                 cloudfront.ErrorResponse(
                     http_status=403,
                     response_http_status=200,
-                    response_page_path="/login.html",
+                    response_page_path='/login.html',
                     ttl=Duration.minutes(30)
                 )
             ],
-            comment=f'{app_name} S3 HTTPS',
+            comment=f'{APP_NAME} S3 HTTPS',
             default_root_object='index.html',
             domain_names=domain_names,
             certificate=certificate
