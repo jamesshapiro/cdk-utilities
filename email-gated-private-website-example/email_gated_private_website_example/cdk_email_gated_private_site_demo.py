@@ -5,10 +5,14 @@ from aws_cdk import (
     aws_cloudfront as cloudfront,
     aws_certificatemanager as certificatemanager,
     aws_cloudfront_origins as origins,
+    aws_apigateway as apigateway,
+    aws_iam as iam,
     aws_route53 as route53,
     aws_route53_targets as route53_targets,
     aws_ssm as ssm,
+    aws_lambda as lambda_,
 )
+import aws_cdk as cdk
 from constructs import Construct
 
 class CDKEmailGatedPrivateSiteDemoStack(Stack):
@@ -24,11 +28,120 @@ class CDKEmailGatedPrivateSiteDemoStack(Stack):
             subdomain = [line for line in lines if line.startswith('subdomain=')][0].split('=')[1]
             hosted_zone_id = [line for line in lines if line.startswith('hosted_zone_id=')][0].split('=')[1]
             zone_name = [line for line in lines if line.startswith('zone_name=')][0].split('=')[1]
+            email_domain = [line for line in lines if line.startswith('email_domain=')][0].split('=')[1]
+            key_id = [line for line in lines if line.startswith('key_id=')][0].split('=')[1]
+            sender_email = [line for line in lines if line.startswith('sender_email=')][0].split('=')[1]
+            signing_url = [line for line in lines if line.startswith('signing_url=')][0].split('=')[1]
         
         with open('private_key.pem') as f:
             private_key = f.read()
+        public_key = """-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyWJOwHFwYUHk8iL7oxX4
+O/Eq8oYqZK5ylRNQce83V97dk9cgMEVnaWww3GxfFgLrUhXtrhhQev0QtKg1CZLm
+jcsz+KYRpowvnYRywhh/voRUpp5Fos6c5/+AhsN/Wuex/WTYX22xlF6+g3ZYISem
+f+bvhMuT1k/BcP7lIWU+DKs5GhWvQMlCnNqOVrlZ/zPD3EhyFUop3Vjk4oVIkgzK
+yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
+7tzJVuF5aB8s3HT2LE4x7nkw1INz5q6vj2xf34w3dK7bK6SBH+HITrPoLg9UwNVK
+3QIDAQAB
+-----END PUBLIC KEY-----
+"""
+        private_key_parameter = ssm.StringParameter(self, f'{APP_NAME}-private-key',
+            description=f'{APP_NAME} Private Key',
+            parameter_name=PRIVATE_KEY_PARAM_NAME,
+            string_value=private_key
+        )
+        public_key_parameter = ssm.StringParameter(self, f'{APP_NAME}-public-key',
+            description=f'{APP_NAME} Public Key',
+            parameter_name=PUBLIC_KEY_PARAM_NAME,
+            string_value=public_key
+        )
+        pub_key = cloudfront.PublicKey(self, f'{APP_NAME}MyPubKey',
+            encoded_key=public_key
+        )
 
-        
+        key_group = cloudfront.KeyGroup(self, f'{APP_NAME}MyKeyGroup',
+            items=[pub_key]
+        )
+
+        api = apigateway.RestApi(
+            self,
+            'cdk-lambda-layer-factory-api',
+            description='CDK Lambda Layer Factory.',
+            deploy_options=apigateway.StageOptions(
+                logging_level=apigateway.MethodLoggingLevel.INFO,
+                data_trace_enabled=True
+            ),
+            default_cors_preflight_options=apigateway.CorsOptions(
+                allow_origins=apigateway.Cors.ALL_ORIGINS,
+                allow_methods=apigateway.Cors.ALL_METHODS
+            )
+        )
+
+        cryptography_38_layer = lambda_.LayerVersion(
+            self,
+            'Cryptography38Layer',
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+            code=lambda_.Code.from_asset('layers/crypto38-2022-3-19-17_47_28.zip'),
+            compatible_architectures=[lambda_.Architecture.X86_64]
+        )
+
+        create_signed_url_function_cdk = lambda_.Function(
+            self, 'CreateSignedUrlCDK',
+            runtime=lambda_.Runtime.PYTHON_3_8,
+            code=lambda_.Code.from_asset('functions'),
+            handler='create_signed_url.lambda_handler',
+            environment={
+                'KEY_ID': key_id,
+                'SENDER_EMAIL': sender_email,
+                'SIGNING_URL': signing_url
+            },
+            layers=[cryptography_38_layer],
+            timeout=Duration.seconds(30)
+        )
+
+        create_signed_url_policy = iam.Policy(
+            self, 'cdk-create-signed-url-policy',
+            statements=[
+                iam.PolicyStatement(
+                    actions=['ses:SendEmail','ses:SendRawEmail'],
+                    resources=[
+                        f'arn:aws:ses:{Aws.REGION}:{Aws.ACCOUNT_ID}:identity/{email_domain}'
+                    ]
+                ),
+                iam.PolicyStatement(
+                    actions=['ssm:GetParameter'],
+                    resources=[
+                        public_key_parameter.parameter_arn,
+                        private_key_parameter.parameter_arn
+                    ]
+                ),
+            ]
+        )
+        create_signed_url_function_cdk.role.attach_inline_policy(create_signed_url_policy)
+
+        create_signed_url_integration = apigateway.LambdaIntegration(
+            create_signed_url_function_cdk,
+            proxy=True
+        )
+
+        create_signed_url_resource = api.root.add_resource(
+            'create-signed-url',
+            default_cors_preflight_options=apigateway.CorsOptions(
+                allow_origins=apigateway.Cors.ALL_ORIGINS,
+                allow_methods=["GET", "POST"]
+            )
+        )
+
+        create_signed_url_resource.add_method(
+            'GET',
+            create_signed_url_integration,
+            method_responses=[{
+                'statusCode': '200',
+                'responseParameters': {
+                    'method.response.header.Access-Control-Allow-Origin': True,
+                }
+            }]
+        )
 
         site_bucket = s3.Bucket(
             self, f'{APP_NAME}-bucket',
@@ -47,33 +160,7 @@ class CDKEmailGatedPrivateSiteDemoStack(Stack):
             hosted_zone=zone
         )
 
-        public_key = """-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyWJOwHFwYUHk8iL7oxX4
-O/Eq8oYqZK5ylRNQce83V97dk9cgMEVnaWww3GxfFgLrUhXtrhhQev0QtKg1CZLm
-jcsz+KYRpowvnYRywhh/voRUpp5Fos6c5/+AhsN/Wuex/WTYX22xlF6+g3ZYISem
-f+bvhMuT1k/BcP7lIWU+DKs5GhWvQMlCnNqOVrlZ/zPD3EhyFUop3Vjk4oVIkgzK
-yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
-7tzJVuF5aB8s3HT2LE4x7nkw1INz5q6vj2xf34w3dK7bK6SBH+HITrPoLg9UwNVK
-3QIDAQAB
------END PUBLIC KEY-----
-"""
-        ssm.StringParameter(self, f'{APP_NAME}-public-key',
-            description=f'{APP_NAME} Public Key',
-            parameter_name=PRIVATE_KEY_PARAM_NAME,
-            string_value=public_key
-        )
-        ssm.StringParameter(self, f'{APP_NAME}-private-key',
-            description=f'{APP_NAME} Private Key',
-            parameter_name=PUBLIC_KEY_PARAM_NAME,
-            string_value=private_key
-        )
-        pub_key = cloudfront.PublicKey(self, f'{APP_NAME}MyPubKey',
-            encoded_key=public_key
-        )
-
-        key_group = cloudfront.KeyGroup(self, f'{APP_NAME}MyKeyGroup',
-            items=[pub_key]
-        )
+        
 
         distribution = cloudfront.Distribution(
             self, f'{APP_NAME}-distribution',
