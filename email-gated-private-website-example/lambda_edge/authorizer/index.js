@@ -11,7 +11,9 @@ const PUBLIC_KEY_PARAM_NAME = `${APP_NAME}-public-key`
 const cache = {}
 
 const loadParameter = async(key, WithDecryption = false) => {
+    console.log("Loading Parameter...")
     const { Parameter } = await ssm.getParameter({ Name: key, WithDecryption: WithDecryption }).promise();
+    console.log(`Parameter loaded with value ${Parameter.value}`)
     return Parameter.Value;
 };
 
@@ -40,12 +42,15 @@ function getExpiryTime() {
 }
 
 exports.handler = async(event) => {
-    if (cache.publicKey == null) cache.publicKey = loadParameter(PUBLIC_KEY_PARAM_NAME)
+    console.log(cache)
+    if (cache.publicKey == null) cache.publicKey = await loadParameter(PUBLIC_KEY_PARAM_NAME)
     //if (cache.privateKey == null) cache.privateKey = loadParameter('privateKey', true);
     if (cache.privateKey == null)
-      cache.privateKey = loadParameter(PRIVATE_KEY_PARAM_NAME)
+      cache.privateKey = await loadParameter(PRIVATE_KEY_PARAM_NAME)
 
     const { publicKey, privateKey } = cache;
+    console.log(`public key = ${publicKey}`)
+    console.log(`private key = ${privateKey}`)
 
     const signedCookie = getSignedCookie(publicKey, privateKey);
 

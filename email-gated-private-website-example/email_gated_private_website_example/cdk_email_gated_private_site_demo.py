@@ -21,6 +21,7 @@ class CDKEmailGatedPrivateSiteDemoStack(Stack):
         APP_NAME = 'athens-email-gated-demo'
         PRIVATE_KEY_PARAM_NAME = f'{APP_NAME}-private-key'
         PUBLIC_KEY_PARAM_NAME = f'{APP_NAME}-public-key'
+        PUBLIC_KEY_ID_PARAM_NAME = f'{APP_NAME}-public-key-id'
 
         with open('.cdk-params') as f:
             lines = f.read().splitlines()
@@ -29,7 +30,6 @@ class CDKEmailGatedPrivateSiteDemoStack(Stack):
             hosted_zone_id = [line for line in lines if line.startswith('hosted_zone_id=')][0].split('=')[1]
             zone_name = [line for line in lines if line.startswith('zone_name=')][0].split('=')[1]
             email_domain = [line for line in lines if line.startswith('email_domain=')][0].split('=')[1]
-            key_id = [line for line in lines if line.startswith('key_id=')][0].split('=')[1]
             sender_email = [line for line in lines if line.startswith('sender_email=')][0].split('=')[1]
             signing_url = [line for line in lines if line.startswith('signing_url=')][0].split('=')[1]
         
@@ -55,6 +55,7 @@ yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
             parameter_name=PUBLIC_KEY_PARAM_NAME,
             string_value=public_key
         )
+
         pub_key = cloudfront.PublicKey(self, f'{APP_NAME}MyPubKey',
             encoded_key=public_key
         )
@@ -63,9 +64,15 @@ yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
             items=[pub_key]
         )
 
+        public_key_id_parameter = ssm.StringParameter(self, f'{APP_NAME}-public-key-id',
+            description=f'{APP_NAME} Public Key ID',
+            parameter_name=PUBLIC_KEY_ID_PARAM_NAME,
+            string_value=pub_key.public_key_id
+        )
+
         api = apigateway.RestApi(
             self,
-            'cdk-lambda-layer-factory-api',
+            'cdk-email-gated-website-demo',
             description='CDK Lambda Layer Factory.',
             deploy_options=apigateway.StageOptions(
                 logging_level=apigateway.MethodLoggingLevel.INFO,
@@ -91,7 +98,7 @@ yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
             code=lambda_.Code.from_asset('functions'),
             handler='create_signed_url.lambda_handler',
             environment={
-                'KEY_ID': key_id,
+                'KEY_ID': PUBLIC_KEY_ID_PARAM_NAME,
                 'SENDER_EMAIL': sender_email,
                 'SIGNING_URL': signing_url
             },
@@ -112,7 +119,8 @@ yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
                     actions=['ssm:GetParameter'],
                     resources=[
                         public_key_parameter.parameter_arn,
-                        private_key_parameter.parameter_arn
+                        private_key_parameter.parameter_arn,
+                        public_key_id_parameter.parameter_arn
                     ]
                 ),
             ]
@@ -143,6 +151,8 @@ yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
             }]
         )
 
+        #CfnOutput(self, api.domain_name)
+
         site_bucket = s3.Bucket(
             self, f'{APP_NAME}-bucket',
         )
@@ -160,7 +170,23 @@ yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
             hosted_zone=zone
         )
 
-        
+        authorizer_policy_statement = iam.PolicyStatement(
+            actions=['ssm:GetParameter'],
+            resources=[
+                public_key_parameter.parameter_arn,
+                private_key_parameter.parameter_arn,
+                public_key_id_parameter.parameter_arn
+            ]
+        )
+        #create_signed_url_function_cdk.role.attach_inline_policy(create_signed_url_policy)
+
+        authorizer_function = cloudfront.experimental.EdgeFunction(self, "EmailGatedPrivateWebsiteAuthorizerCDK",
+            runtime=lambda_.Runtime.NODEJS_14_X,
+            code=lambda_.Code.from_asset('lambda_edge/authorizer'),
+            handler='index.handler',
+            timeout=Duration.seconds(5)
+        )
+        authorizer_function.add_to_role_policy(authorizer_policy_statement)
 
         distribution = cloudfront.Distribution(
             self, f'{APP_NAME}-distribution',
@@ -168,39 +194,62 @@ yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
                 origin=origins.S3Origin(site_bucket),
                 allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-                trusted_key_groups=[key_group]
-                # edge_lambdas=[
-                #     cloudfront.EdgeLambda(
-                #         function_version=authorizer_function.current_version,
-                #         event_type=cloudfront.LambdaEdgeEventType.VIEWER_REQUEST
-                #     )
-                # ]
+                trusted_key_groups=[key_group],
+                edge_lambdas=[
+                    cloudfront.EdgeLambda(
+                        function_version=authorizer_function.current_version,
+                        event_type=cloudfront.LambdaEdgeEventType.VIEWER_REQUEST
+                    )
+                ]
             ),
             additional_behaviors={
                 # public behavior 1
                 '/login.html': cloudfront.BehaviorOptions(
                     origin=origins.S3Origin(site_bucket),
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
-                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS
+                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    # edge_lambdas=[
+                    #     cloudfront.EdgeLambda(
+                    #         function_version=authorizer_function.current_version,
+                    #         event_type=cloudfront.LambdaEdgeEventType.VIEWER_REQUEST
+                    #     )
+                    # ]
                 ),
-                # public behavior 2
-                '/assets/*': cloudfront.BehaviorOptions(
+                '/static/*': cloudfront.BehaviorOptions(
                     origin=origins.S3Origin(site_bucket),
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
-                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS
+                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    # edge_lambdas=[
+                    #     cloudfront.EdgeLambda(
+                    #         function_version=authorizer_function.current_version,
+                    #         event_type=cloudfront.LambdaEdgeEventType.VIEWER_REQUEST
+                    #     )
+                    # ]
                 ),
                 # public behavior 3 -- tied to Lambda@Edge function eventually
                 '/login': cloudfront.BehaviorOptions(
                     origin=origins.S3Origin(site_bucket),
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
-                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS
+                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    # edge_lambdas=[
+                    #     cloudfront.EdgeLambda(
+                    #         function_version=authorizer_function.current_version,
+                    #         event_type=cloudfront.LambdaEdgeEventType.VIEWER_REQUEST
+                    #     )
+                    # ]
                 ),
                 # private behavior 1 -- tied to Lambda@Edge function eventually
-                '/auth': cloudfront.BehaviorOptions(
+                '/auth*': cloudfront.BehaviorOptions(
                     origin=origins.S3Origin(site_bucket),
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-                    trusted_key_groups=[key_group]
+                    trusted_key_groups=[key_group],
+                    edge_lambdas=[
+                        cloudfront.EdgeLambda(
+                            function_version=authorizer_function.current_version,
+                            event_type=cloudfront.LambdaEdgeEventType.VIEWER_REQUEST
+                        )
+                    ]
                 ),
             },
             error_responses=[
@@ -212,7 +261,7 @@ yhO9XlGwPF1q3gw/UNRHQTLNNeNIFQBvdMjx8o1EMFqyfvq08PebnQDJcVyV/oGA
                 )
             ],
             comment=f'{APP_NAME} S3 HTTPS',
-            default_root_object='index.html',
+            default_root_object='login.html',
             domain_names=domain_names,
             certificate=certificate
         )

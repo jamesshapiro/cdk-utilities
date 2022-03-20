@@ -1,0 +1,317 @@
+.nav-bar-cell {
+}
+
+.nav-bar-div {
+  background-color: lightgrey;
+}
+
+.habit-title {
+  margin-left: 33px;
+  display: block;
+  font-size: 1.17em;
+  margin-top: 1em;
+  margin-bottom: 9px;
+  margin-right: 0;
+  font-weight: bold;
+  text-align: center;
+}
+
+.inner-streak {
+  font-size: 10px;
+  display: inline-block;
+  font-weight: bold;
+  padding: 5px;
+  color: white;
+  background-color: rgb(212, 175, 55);
+  border-radius: 5px;
+}
+
+.full-header {
+  position: fixed;
+  top: 0;
+  width: 100%;
+  z-index: 100;
+}
+
+.habit-graphs-container {
+  margin-top: 96px;
+}
+
+.outer-streak {
+  display: inline-block;
+}
+
+.habit-name {
+  display: inline;
+  margin-right: 4px;
+  position: relative;
+  bottom: -3.5px;
+}
+
+/* h1 values */
+.habit-tracker-header {
+  display: inline;
+  font-size: 2em;
+  margin-top: 0em;
+  margin-bottom: 0px;
+  margin-left: 10px;
+  font-weight: bold;
+}
+
+#login-logout-button a {
+  color: white !important;
+  text-decoration: none;
+}
+
+.right-elem {
+  float: right;
+}
+
+.clickable {
+  margin-left: 3px;
+  margin-right: 1px;
+  margin-top: 100px;
+  cursor: pointer;
+  padding: 5px;
+  color: white;
+  background-color: #000;
+  border-radius: 4px;
+  display: block;
+  font-size: 0.83em;
+  margin-top: 0;
+  margin-bottom: 0;
+  font-weight: bold;
+}
+
+/* h2 values */
+.demo-user {
+  display: block;
+  font-size: 1.5em;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  margin-bottom: 0em;
+  padding-left: 14px;
+  margin-right: 0;
+  overflow: auto;
+  background-color: #e9e9e9;
+  font-weight: lighter;
+}
+
+.habit-ui-table {
+  margin: 10px;
+}
+
+.habit {
+  margin: 10px 38px 0 0px;
+  display: inline-block;
+  /* width: 95%; */
+}
+
+.to-delete {
+  text-decoration: line-through;
+}
+
+.to-delete-button {
+  cursor: default;
+}
+
+.tr-existing-habit {
+  margin-bottom: 5px;
+}
+
+.div-existing-habit {
+  background-color: lightgray;
+  padding: 4px 4px 4px 10px;
+  border-radius: 8px;
+  font-weight: bold;
+  margin-bottom: 3px;
+}
+
+.create-layer-button {
+  cursor: pointer;
+  background-color: lightgrey;
+  width: 100px;
+  padding: 10px;
+  border-radius: 10px;
+  border-style: solid;
+  font-weight: bold;
+}
+
+.bullet-button {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  background-color: lightgrey;
+  height: 40px;
+  width: 40px;
+  /* display: table; */
+  font-size: 28px;
+  text-align: center;
+}
+
+.right-bullet-button {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  margin-left: 42px;
+  background-color: lightgrey;
+  height: 40px;
+  width: 40px;
+  /* display: table; */
+  font-size: 28px;
+  text-align: center;
+}
+
+.commit-graph {
+  margin-left: 50px;
+  display: inline-block;
+}
+
+.back-to-grid-body {
+  margin-left: 12px;
+  cursor: pointer;
+  padding: 4px 12px 4px 10px;
+  color: white;
+  background-color: #000;
+  border-radius: 8px;
+  font-weight: normal;
+}
+
+#habit-start-date {
+  fill: rgb(212, 175, 55);
+}
+
+.blank-footer {
+  width: 100%;
+  height: 6rem;
+  background-color: white;
+}
+
+@media only screen and (max-width: 850px) {
+  .habit-title {
+    margin: auto;
+    display: block;
+  }
+
+  .commit-graph {
+    margin: auto;
+    display: block;
+  }
+
+  .habit {
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 10px;
+    display: block;
+    width: 280px;
+  }
+
+  .nav-bar-cell {
+    margin-right: 10px;
+  }
+
+  /* h1 values */
+  .habit-tracker-header {
+    font-size: 1.17em;
+    margin-left: 10px;
+    font-weight: bold;
+  }
+
+  .clickable {
+    margin-left: 0px;
+    margin-right: 1px;
+    cursor: pointer;
+    padding: 5px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+    color: white;
+    background-color: #000;
+    border-radius: 4px;
+    font-size: 0.7em;
+    font-weight: normal;
+  }
+
+  /* h2 values */
+  .demo-user {
+    font-size: 1.17em;
+    padding-top: 0px;
+    padding-bottom: 0px;
+    padding-left: 13px;
+    margin-right: 0;
+  }
+
+  .habit-title {
+    margin-bottom: 10px;
+  }
+
+  .habit-graphs-container {
+    margin-top: 66px;
+  }
+}
+
+/* @media only screen and (max-width: 1200px) {
+} */
+.upload-outer-box {
+  width: 500px;
+  height: 200px;
+  border: 2px solid black;
+  padding: 10px;
+  background-color: lightskyblue;
+  text-align: center;
+  display: table;
+  overflow: hidden;
+  font-size: 2.4em;
+  font-weight: bold;
+  margin: auto;
+}
+
+.upload-inner-box {
+  display: table-cell;
+  vertical-align: middle;
+}
+
+.bullet-textarea {
+  width: 180px;
+  height: 40px;
+  /* padding: 2px; */
+  vertical-align: bottom;
+}
+
+.version-textarea {
+  width: 180px;
+  height: 40px;
+  /* padding: 2px; */
+  vertical-align: bottom;
+}
+
+.td-textarea {
+  background-color: white;
+  width: 180px;
+  /* margin: 0 auto; */
+}
+
+.bullet-button {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  background-color: lightgrey;
+  height: 40px;
+  width: 40px;
+  /* display: table; */
+  font-size: 28px;
+  text-align: center;
+}
+
+.td-button {
+  background-color: white;
+}
+
+.image-caption {
+  width: 500px;
+  margin: auto;
+  font-size: 1.5rem;
+}
+
+.image-caption-textarea {
+  width: 500px;
+}
