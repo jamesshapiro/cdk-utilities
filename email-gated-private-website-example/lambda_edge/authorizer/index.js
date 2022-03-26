@@ -6,7 +6,7 @@ const SIGNING_URL = 'email-gated-private-site-demo.weakerpotions.com'
 
 const APP_NAME = 'athens-email-gated-demo'
 const PRIVATE_KEY_PARAM_NAME = `${APP_NAME}-private-key`
-const PUBLIC_KEY_PARAM_NAME = `${APP_NAME}-public-key`
+const PUBLIC_KEY_PARAM_NAME = `${APP_NAME}-public-key-id`
 
 const cache = {}
 
