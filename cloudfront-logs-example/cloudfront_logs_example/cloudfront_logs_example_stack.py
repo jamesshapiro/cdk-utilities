@@ -1,5 +1,4 @@
 from aws_cdk import (
-    # Duration,
     Stack,
     aws_s3 as s3,
     aws_cloudfront as cloudfront,
@@ -11,7 +10,7 @@ from aws_cdk import (
 )
 from constructs import Construct
 
-class S3CloudfrontSslExampleStack(Stack):
+class CloudfrontLogsExampleStack(Stack):
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -47,7 +46,11 @@ class S3CloudfrontSslExampleStack(Stack):
             comment='S3 HTTPS example',
             default_root_object='index.html',
             domain_names=[subdomain_name],
-            certificate=certificate
+            certificate=certificate,
+            enable_logging=True,
+            log_bucket=s3.Bucket(self, "cloudfront-logs"),
+            log_file_prefix="cloudfront-logs-example-distribution-access-logs/",
+            log_includes_cookies=True
         )
 
         a_record_target = route53.RecordTarget.from_alias(route53_targets.CloudFrontTarget(distribution))
@@ -60,4 +63,5 @@ class S3CloudfrontSslExampleStack(Stack):
         )
 
         CfnOutput(self, f'{subdomain_name}-bucket-name', value=site_bucket.bucket_name)
+
 
