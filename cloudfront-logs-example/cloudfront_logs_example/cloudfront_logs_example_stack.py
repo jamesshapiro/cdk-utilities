@@ -6,7 +6,9 @@ from aws_cdk import (
     aws_route53 as route53,
     aws_route53_targets as route53_targets,
     aws_cloudfront_origins as origins,
-    CfnOutput
+    aws_lambda_event_sources as lambda_event_sources,
+    aws_lambda as lambda_,
+    CfnOutput, Duration
 )
 from constructs import Construct
 
@@ -36,6 +38,8 @@ class CloudfrontLogsExampleStack(Stack):
             hosted_zone=zone
         )
 
+        cloudfront_logs_bucket = s3.Bucket(self, "cloudfront-logs")
+
         distribution = cloudfront.Distribution(
             self, 'distribution',
             default_behavior=cloudfront.BehaviorOptions(
@@ -48,7 +52,7 @@ class CloudfrontLogsExampleStack(Stack):
             domain_names=[subdomain_name],
             certificate=certificate,
             enable_logging=True,
-            log_bucket=s3.Bucket(self, "cloudfront-logs"),
+            log_bucket=cloudfront_logs_bucket,
             log_file_prefix="cloudfront-logs-example-distribution-access-logs/",
             log_includes_cookies=True
         )
@@ -63,5 +67,23 @@ class CloudfrontLogsExampleStack(Stack):
         )
 
         CfnOutput(self, f'{subdomain_name}-bucket-name', value=site_bucket.bucket_name)
+
+        aws_analytics_function = lambda_.Function(
+            self, "aws-analytics-function",
+            runtime=lambda_.Runtime.PYTHON_3_9,
+            code=lambda_.Code.from_asset("functions"),
+            handler="aws_analytics.lambda_handler",
+            environment={'ANALYTICS_DDB_TABLE':'NULL'},
+            timeout=Duration.seconds(30)
+        )
+
+        cloudfront_logs_bucket.grant_read(aws_analytics_function)
+
+        aws_analytics_function.add_event_source(
+            lambda_event_sources.S3EventSource(
+                cloudfront_logs_bucket,
+                events=[s3.EventType.OBJECT_CREATED],
+            )
+        )
 
 
