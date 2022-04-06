@@ -11,6 +11,7 @@ from aws_cdk import (
     CfnOutput, Duration
 )
 from constructs import Construct
+import aws_cdk as cdk
 
 class CloudfrontLogsExampleStack(Stack):
 
@@ -68,13 +69,20 @@ class CloudfrontLogsExampleStack(Stack):
 
         CfnOutput(self, f'{subdomain_name}-bucket-name', value=site_bucket.bucket_name)
 
+        requests_layer = lambda_.LayerVersion(self,'Requests39Layer',
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+            code=lambda_.Code.from_asset('layers/requestspython39.zip'),
+            compatible_architectures=[lambda_.Architecture.X86_64]
+        )
+
         aws_analytics_function = lambda_.Function(
             self, "aws-analytics-function",
             runtime=lambda_.Runtime.PYTHON_3_9,
             code=lambda_.Code.from_asset("functions"),
             handler="aws_analytics.lambda_handler",
             environment={'ANALYTICS_DDB_TABLE':'NULL'},
-            timeout=Duration.seconds(30)
+            timeout=Duration.seconds(30),
+            layers=[requests_layer]
         )
 
         cloudfront_logs_bucket.grant_read(aws_analytics_function)
