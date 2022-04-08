@@ -1,0 +1,38 @@
+{
+  "Records": [
+    {
+      "eventVersion": "2.1",
+      "eventSource": "aws:s3",
+      "awsRegion": "us-east-1",
+      "eventTime": "2022-04-06T04:46:59.983Z",
+      "eventName": "ObjectCreated:Put",
+      "userIdentity": {
+        "principalId": "AWS:AROASLZSKMR5WNLFCYRXL:prod.iad.dbs.datafeeds.aws.internal"
+      },
+      "requestParameters": {
+        "sourceIPAddress": "10.106.29.168"
+      },
+      "responseElements": {
+        "x-amz-request-id": "WDCF93BRE1GCDV7D",
+        "x-amz-id-2": "6nOShKQZWkrtEx/i12oVuRIIs7ukFsJAuNxxnQLUUYNFC2Vh8K92XCGzuFOHS7PUw7zEyn6H/WyjMftmOKrai/TWgu6b28CK"
+      },
+      "s3": {
+        "s3SchemaVersion": "1.0",
+        "configurationId": "ZGUwZmU3ZGYtYzc2ZS00YjdkLTkxNWMtM2U0ZGM2ZTk5YTli",
+        "bucket": {
+          "name": "cloudfrontlogsexamplestack-cloudfrontlogs990b4e2d-137vw9e236o2s",
+          "ownerIdentity": {
+            "principalId": "A3BJ2H7D1RXFCO"
+          },
+          "arn": "arn:aws:s3:::cloudfrontlogsexamplestack-cloudfrontlogs990b4e2d-137vw9e236o2s"
+        },
+        "object": {
+          "key": "cloudfront-logs-example-distribution-access-logs/EMHSBIC2UAVH8.2022-04-06-04.5e2bc444.gz",
+          "size": 705,
+          "eTag": "a7e8cd5d16b894127e70737623994347",
+          "sequencer": "00624D1B43E5A1CE80"
+        }
+      }
+    }
+  ]
+}

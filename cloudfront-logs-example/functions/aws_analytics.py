@@ -4,9 +4,12 @@ import io
 import gzip
 import json
 import requests
+import os
 
 from urllib.parse import unquote_plus
 s3_client = boto3.client('s3')
+ddb_client = boto3.client('dynamodb')
+table_name = os.environ['ANALYTICS_DDB_TABLE']
 
 def lambda_handler(event, context):
     record = event['Records'][0]['s3']
@@ -36,6 +39,24 @@ def lambda_handler(event, context):
             print(f'~ {key}: {ip_info[key]}')
         print(ip_info)
         print('\n===\n=========================\n===\n')
+        host = record['x-host-header']
+        path = record['cs-uri-stem']
+        date_time = f'{record["date"]}_{record["time"]}'
+        request_id = record['x-edge-request-id']
+        pk1 = f'HOST#{host}#PATH#{path}'
+        sk1 = f'DATETIME#{date_time}#REQUEST_ID#{request_id}'
+        record_kwargs = {key: {'S': str(record[key])} for key in record}
+        ip_info_kwargs = {key: {'S': str(ip_info[key])} for key in ip_info}
+        kwargs = {
+            'PK1': {'S': pk1},
+            'SK1': {'S': sk1},
+        }
+        kwargs.update(record_kwargs)
+        kwargs.update(ip_info_kwargs)
+        ddb_client.put_item(
+            TableName=table_name,
+            Item=kwargs
+        )
     return {
         'statusCode': 200,
         'body': 'Shalom Haverim!'

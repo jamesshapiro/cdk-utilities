@@ -8,7 +8,8 @@ from aws_cdk import (
     aws_cloudfront_origins as origins,
     aws_lambda_event_sources as lambda_event_sources,
     aws_lambda as lambda_,
-    CfnOutput, Duration
+    aws_dynamodb as dynamodb,
+    CfnOutput, Duration, RemovalPolicy
 )
 from constructs import Construct
 import aws_cdk as cdk
@@ -75,23 +76,37 @@ class CloudfrontLogsExampleStack(Stack):
             compatible_architectures=[lambda_.Architecture.X86_64]
         )
 
-        aws_analytics_function = lambda_.Function(
-            self, "aws-analytics-function",
+        ddb_table = dynamodb.Table(
+            self, 'Table',
+            partition_key=dynamodb.Attribute(name='PK1', type=dynamodb.AttributeType.STRING),
+            sort_key=dynamodb.Attribute(name='SK1', type=dynamodb.AttributeType.STRING),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            time_to_live_attribute='TTL_EXPIRATION',
+            removal_policy=RemovalPolicy.DESTROY
+        )
+
+        aws_log_analytics_data_function = lambda_.Function(
+            self, "aws-log-analytics-data-function",
             runtime=lambda_.Runtime.PYTHON_3_9,
             code=lambda_.Code.from_asset("functions"),
             handler="aws_analytics.lambda_handler",
-            environment={'ANALYTICS_DDB_TABLE':'NULL'},
+            environment={
+                'ANALYTICS_DDB_TABLE': ddb_table.table_name
+            },
             timeout=Duration.seconds(30),
             layers=[requests_layer]
         )
 
-        cloudfront_logs_bucket.grant_read(aws_analytics_function)
+        cloudfront_logs_bucket.grant_read(aws_log_analytics_data_function)
 
-        aws_analytics_function.add_event_source(
+        aws_log_analytics_data_function.add_event_source(
             lambda_event_sources.S3EventSource(
                 cloudfront_logs_bucket,
                 events=[s3.EventType.OBJECT_CREATED],
             )
         )
+
+        ddb_table.grant_write_data(aws_log_analytics_data_function)
+        
 
 
