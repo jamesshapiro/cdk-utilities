@@ -85,11 +85,11 @@ class CloudfrontLogsExampleStack(Stack):
             removal_policy=RemovalPolicy.DESTROY
         )
 
-        aws_log_analytics_data_function = lambda_.Function(
-            self, "aws-log-analytics-data-function",
+        log_analytics_data_function = lambda_.Function(
+            self, "log-analytics-data-function",
             runtime=lambda_.Runtime.PYTHON_3_9,
             code=lambda_.Code.from_asset("functions"),
-            handler="aws_analytics.lambda_handler",
+            handler="log_analytics_data.lambda_handler",
             environment={
                 'ANALYTICS_DDB_TABLE': ddb_table.table_name
             },
@@ -97,16 +97,30 @@ class CloudfrontLogsExampleStack(Stack):
             layers=[requests_layer]
         )
 
-        cloudfront_logs_bucket.grant_read(aws_log_analytics_data_function)
+        site_list = subdomain_name
+        aggregate_analytics_data_function = lambda_.Function(
+            self, "aggregate-analytics-data-function",
+            runtime=lambda_.Runtime.PYTHON_3_9,
+            code=lambda_.Code.from_asset("functions"),
+            handler="aggregate_analytics_data.lambda_handler",
+            environment={
+                'ANALYTICS_DDB_TABLE': ddb_table.table_name,
+                'SITE_LIST': site_list
+            },
+            timeout=Duration.seconds(30)
+        )
 
-        aws_log_analytics_data_function.add_event_source(
+        cloudfront_logs_bucket.grant_read(log_analytics_data_function)
+
+        log_analytics_data_function.add_event_source(
             lambda_event_sources.S3EventSource(
                 cloudfront_logs_bucket,
                 events=[s3.EventType.OBJECT_CREATED],
             )
         )
 
-        ddb_table.grant_write_data(aws_log_analytics_data_function)
+        ddb_table.grant_write_data(log_analytics_data_function)
+        ddb_table.grant_read_write_data(aggregate_analytics_data_function)
         
 
 

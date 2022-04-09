@@ -15,11 +15,8 @@ def lambda_handler(event, context):
     record = event['Records'][0]['s3']
     bucket = record['bucket']['name']
     key = unquote_plus(record['object']['key'])
-    #print(f'{event=}')
-    #print(f'{bucket}{key}')
     response = s3_client.get_object(Bucket=bucket, Key=key)
     content = response['Body'].read()
-    #with gzip.GzipFile(fileobj=io.BytesIO(content), mode='rb') as f:
     with gzip.GzipFile(fileobj=io.BytesIO(content), mode='rb') as f:
         cloudfront_logs = f.read().splitlines()
     cloudfront_logs = [line.decode("utf-8") for line in cloudfront_logs]
@@ -45,8 +42,8 @@ def lambda_handler(event, context):
         request_id = record['x-edge-request-id']
         pk1 = f'HOST#{host}#PATH#{path}'
         sk1 = f'DATETIME#{date_time}#REQUEST_ID#{request_id}'
-        record_kwargs = {key: {'S': str(record[key])} for key in record}
-        ip_info_kwargs = {key: {'S': str(ip_info[key])} for key in ip_info}
+        record_kwargs = {f'CLOUDFRONT#{key}': {'S': str(record[key])} for key in record}
+        ip_info_kwargs = {f'IP_INFO#{key}': {'S': str(ip_info[key])} for key in ip_info}
         kwargs = {
             'PK1': {'S': pk1},
             'SK1': {'S': sk1},
