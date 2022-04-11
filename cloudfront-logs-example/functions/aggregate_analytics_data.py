@@ -1,6 +1,59 @@
 import boto3
 import json
 from datetime import datetime, timedelta, date
+import os
+
+ddb_client = boto3.client('dynamodb')
+paginator = ddb_client.get_paginator('query')
+ses_client = boto3.client("ses")
+
+table_name = os.environ['ANALYTICS_DDB_TABLE']
+site_list = os.environ['SITE_LIST']
+email_sender = os.environ['EMAIL_SENDER']
+email_recipient = os.environ['EMAIL_RECIPIENT']
+
+WEEKLY = 7
+
+def send_email(ses_client, website, email_recipient, email_sender, analytics_data):
+    charset = "UTF-8"
+    todays_date = get_today()
+    email_lines = [
+        '<html>',
+        '<head></head>',
+        f'<h3>Analytics Summary {todays_date}</h3>',
+        '<table style="border: 1px solid;">'
+    ]
+    colors = ['#F2F2F2','#FFFFFF']
+    formatted_data = [f'<tr style="background-color: {colors[idx%2]};">{item}</tr>' for idx, item in enumerate(analytics_data)]
+    email_lines.extend(formatted_data)
+    email_lines.extend([
+        '</table>'
+        '<p>or</p>',
+        '</body>',
+        '</html>'
+    ])
+    subject_line = f'🖥️📈 {website} Analytics Summary {todays_date}'    
+    response = ses_client.send_email(
+        Destination={
+            'ToAddresses': [
+                email_recipient,
+            ],
+        },
+        Message={
+            'Body': {
+                'Html': {
+                    'Charset': charset,
+                    'Data': '\n'.join(email_lines),
+                }
+            },
+            'Subject': {
+                'Charset': charset,
+                'Data': subject_line
+            },
+        },
+        Source=f'AWS Analytics <{email_sender}>',
+    )
+    return response
 
 def get_month_to_date():
     start_date = get_start_of_month()
@@ -22,14 +75,6 @@ def get_today():
 
 def get_yesterday():
     return (date.today() - timedelta(days=1)).isoformat()
-
-import os
-
-ddb_client = boto3.client('dynamodb')
-table_name = os.environ['ANALYTICS_DDB_TABLE']
-site_list = os.environ['SITE_LIST']
-paginator = ddb_client.get_paginator('query')
-WEEKLY = 7
 
 def get_visits(last_n_days, site_list):
     sites = site_list.split(',')
@@ -53,15 +98,59 @@ def get_visits(last_n_days, site_list):
             batch_items = batch['Items']
             in_range = [item for item in batch_items if item['SK1']['S'] >= f'DATETIME#{cutoff}_']
             out_of_range = [item for item in batch_items if item['SK1']['S'] < f'DATETIME#{cutoff}_']
-            items.extend(in_range)
+            reported = []
+            header_fields = [
+                'date',
+                #'website',
+                'path',
+                'ip_address',
+                'lat',
+                'lon',
+                'zip',
+                'city',
+                'region',
+                'region_name',
+                #'country',
+                'country_code',
+                #'timezone',
+                'edge_location',
+                'time',
+                'isp',
+                #'as',
+                'org'
+            ]
+            reported.append(f'<td>{"</td><td>".join(header_fields)}</td>')
+            for item in in_range:
+                relevant_fields = [
+                    item['CLOUDFRONT#date']['S'],
+                    #item['CLOUDFRONT#x-host-header']['S'],
+                    item['CLOUDFRONT#cs-uri-stem']['S'],
+                    item['CLOUDFRONT#c-ip']['S'],
+                    item['IP_INFO#lat']['S'],
+                    item['IP_INFO#lon']['S'],
+                    item['IP_INFO#zip']['S'],
+                    item['IP_INFO#city']['S'],
+                    item['IP_INFO#region']['S'],
+                    item['IP_INFO#regionName']['S'],
+                    #item['IP_INFO#country']['S'],
+                    item['IP_INFO#countryCode']['S'],
+                    #item['IP_INFO#timezone']['S'],
+                    item['CLOUDFRONT#x-edge-location']['S'],
+                    item['CLOUDFRONT#time']['S'],
+                    item['IP_INFO#isp']['S'],
+                    #item['IP_INFO#as']['S'],
+                    item['IP_INFO#org']['S']
+                ]
+                reported.append(f'<td>{"</td><td>".join(relevant_fields)}</td>')
+            items.extend(reported)
             if out_of_range or not in_range:
                 break
         result[site] = items
+        send_email(ses_client, site, email_recipient, email_sender, items)
     return result
 
-
 def lambda_handler(event, context):
-    result = get_visits(2, site_list)
+    result = get_visits(7, site_list)
     print(f'{result=}')
     return {
         'statusCode': 200,

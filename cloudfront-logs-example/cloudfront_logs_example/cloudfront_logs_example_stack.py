@@ -9,7 +9,10 @@ from aws_cdk import (
     aws_lambda_event_sources as lambda_event_sources,
     aws_lambda as lambda_,
     aws_dynamodb as dynamodb,
-    CfnOutput, Duration, RemovalPolicy
+    aws_events as events,
+    aws_events_targets as targets,
+    aws_iam as iam,
+    CfnOutput, Duration, RemovalPolicy, Aws
 )
 from constructs import Construct
 import aws_cdk as cdk
@@ -23,8 +26,11 @@ class CloudfrontLogsExampleStack(Stack):
             # .cdk-params should be of the form:
             # key=value
             subdomain_name = [line for line in lines if line.startswith('subdomain=')][0].split('=')[1]
+            domain = [line for line in lines if line.startswith('domain=')][0].split('=')[1]
             hosted_zone_id = [line for line in lines if line.startswith('hosted_zone_id=')][0].split('=')[1]
             zone_name = [line for line in lines if line.startswith('zone_name')][0].split('=')[1]
+            email_sender = [line for line in lines if line.startswith('email_sender')][0].split('=')[1]
+            email_recipient = [line for line in lines if line.startswith('email_recipient')][0].split('=')[1]
         site_bucket = s3.Bucket(
             self, 'bucket',
         )
@@ -105,10 +111,25 @@ class CloudfrontLogsExampleStack(Stack):
             handler="aggregate_analytics_data.lambda_handler",
             environment={
                 'ANALYTICS_DDB_TABLE': ddb_table.table_name,
-                'SITE_LIST': site_list
+                'SITE_LIST': site_list,
+                'EMAIL_SENDER': email_sender,
+                'EMAIL_RECIPIENT': email_recipient
             },
             timeout=Duration.seconds(30)
         )
+
+        email_analytics_report_policy = iam.Policy(
+            self, 'cdk-habits-send-email',
+            statements=[
+                iam.PolicyStatement(
+                    actions=['ses:SendEmail','ses:SendRawEmail'],
+                    resources=[
+                        f'arn:aws:ses:{Aws.REGION}:{Aws.ACCOUNT_ID}:identity/{domain}'
+                    ]
+                )
+            ]
+        )
+        aggregate_analytics_data_function.role.attach_inline_policy(email_analytics_report_policy)
 
         cloudfront_logs_bucket.grant_read(log_analytics_data_function)
 
@@ -121,6 +142,13 @@ class CloudfrontLogsExampleStack(Stack):
 
         ddb_table.grant_write_data(log_analytics_data_function)
         ddb_table.grant_read_write_data(aggregate_analytics_data_function)
+
+        lambda_target = targets.LambdaFunction(aggregate_analytics_data_function)
+
+        events.Rule(self, "ScheduleRule",
+            schedule=events.Schedule.cron(minute="0", hour="4"),
+            targets=[lambda_target]
+        )
         
 
 
