@@ -2,6 +2,10 @@ import boto3
 import json
 from datetime import datetime, timedelta, date
 import os
+import numpy as np
+import pandas as pd
+import geopandas as gpd
+import matplotlib.pyplot as plt
 
 ddb_client = boto3.client('dynamodb')
 paginator = ddb_client.get_paginator('query')

@@ -76,9 +76,15 @@ class CloudfrontLogsExampleStack(Stack):
 
         CfnOutput(self, f'{subdomain_name}-bucket-name', value=site_bucket.bucket_name)
 
-        requests_layer = lambda_.LayerVersion(self,'Requests39Layer',
+        requests_layer = lambda_.LayerVersion(self,'Requests38Layer',
             removal_policy=cdk.RemovalPolicy.DESTROY,
-            code=lambda_.Code.from_asset('layers/requestspython39.zip'),
+            code=lambda_.Code.from_asset('layers/requestspython38.zip'),
+            compatible_architectures=[lambda_.Architecture.X86_64]
+        )
+
+        world_map_layer = lambda_.LayerVersion(self,'WorldMap38Layer',
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+            code=lambda_.Code.from_asset('layers/world-map-layer-python38.zip'),
             compatible_architectures=[lambda_.Architecture.X86_64]
         )
 
@@ -91,16 +97,23 @@ class CloudfrontLogsExampleStack(Stack):
             removal_policy=RemovalPolicy.DESTROY
         )
 
+        NUMPY_LAYER_ARN = 'arn:aws:lambda:us-east-1:668099181075:layer:AWSLambda-Python38-SciPy1x:107'
+        numpy_layer = lambda_.LayerVersion.from_layer_version_arn(self, "numpy_layer", NUMPY_LAYER_ARN)
+
         log_analytics_data_function = lambda_.Function(
             self, "log-analytics-data-function",
-            runtime=lambda_.Runtime.PYTHON_3_9,
+            runtime=lambda_.Runtime.PYTHON_3_8,
             code=lambda_.Code.from_asset("functions"),
             handler="log_analytics_data.lambda_handler",
             environment={
                 'ANALYTICS_DDB_TABLE': ddb_table.table_name
             },
             timeout=Duration.seconds(30),
-            layers=[requests_layer]
+            layers=[
+                requests_layer,
+                numpy_layer,
+                world_map_layer
+            ]
         )
 
         site_list = subdomain_name
