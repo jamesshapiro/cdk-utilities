@@ -82,9 +82,20 @@ class CloudfrontLogsExampleStack(Stack):
             compatible_architectures=[lambda_.Architecture.X86_64]
         )
 
-        world_map_layer = lambda_.LayerVersion(self,'WorldMap38Layer',
+        # requirements.txt
+        # pandas==1.2.5
+        # geopandas==0.10.2
+        # matplotlib==3.4.2
+        # pyproj==3.3.0
+        # certifi==2021.10.8
+        # Shapely==1.8.1.post1
+        # Pillow==9.1.0
+        # pyparsing==3.0.8
+        # cycler==0.11.0
+        # 
+        world_map_layer3 = lambda_.LayerVersion(self,'WorldMap38Layer3',
             removal_policy=cdk.RemovalPolicy.DESTROY,
-            code=lambda_.Code.from_asset('layers/world-map-layer-python38.zip'),
+            code=lambda_.Code.from_asset('layers/skinny-geopandas-Python38.zip'),
             compatible_architectures=[lambda_.Architecture.X86_64]
         )
 
@@ -98,7 +109,7 @@ class CloudfrontLogsExampleStack(Stack):
         )
 
         NUMPY_LAYER_ARN = 'arn:aws:lambda:us-east-1:668099181075:layer:AWSLambda-Python38-SciPy1x:107'
-        numpy_layer = lambda_.LayerVersion.from_layer_version_arn(self, "numpy_layer", NUMPY_LAYER_ARN)
+        numpy_layer = lambda_.LayerVersion.from_layer_version_arn(self, "numpy_layer", layer_version_arn=NUMPY_LAYER_ARN)
 
         log_analytics_data_function = lambda_.Function(
             self, "log-analytics-data-function",
@@ -111,15 +122,13 @@ class CloudfrontLogsExampleStack(Stack):
             timeout=Duration.seconds(30),
             layers=[
                 requests_layer,
-                numpy_layer,
-                world_map_layer
             ]
         )
 
         site_list = subdomain_name
         aggregate_analytics_data_function = lambda_.Function(
             self, "aggregate-analytics-data-function",
-            runtime=lambda_.Runtime.PYTHON_3_9,
+            runtime=lambda_.Runtime.PYTHON_3_8,
             code=lambda_.Code.from_asset("functions"),
             handler="aggregate_analytics_data.lambda_handler",
             environment={
@@ -128,7 +137,11 @@ class CloudfrontLogsExampleStack(Stack):
                 'EMAIL_SENDER': email_sender,
                 'EMAIL_RECIPIENT': email_recipient
             },
-            timeout=Duration.seconds(30)
+            timeout=Duration.seconds(30),
+            layers=[
+                numpy_layer,
+                world_map_layer3
+            ]
         )
 
         email_analytics_report_policy = iam.Policy(
